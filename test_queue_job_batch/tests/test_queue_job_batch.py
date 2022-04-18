@@ -8,7 +8,7 @@ class TestQueueJobGroup(TransactionCase):
         batch = self.env['queue.job.batch'].get_new_batch('TEST')
         self.assertFalse(batch.job_ids)
         model = self.env['test.queue.job'].with_context(
-            job_batch=batch
+            job_batch=batch.id
         )
         job_1 = model.with_delay().testing_method()
         self.assertEqual(job_1.db_record().state, 'pending')

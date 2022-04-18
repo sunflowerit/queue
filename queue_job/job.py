@@ -5,11 +5,14 @@ import inspect
 import functools
 import hashlib
 import logging
+import json
+import yaml
 import uuid
 import sys
 from datetime import datetime, timedelta
 
 import odoo
+from odoo.tools.safe_eval import safe_eval
 
 from .exception import (NoSuchJobError,
                         FailedJobError,
@@ -55,7 +58,7 @@ class DelayableRecordset(object):
 
     def __init__(self, recordset, priority=None, eta=None,
                  max_retries=None, description=None, channel=None,
-                 identity_key=None):
+                 identity_key=None, keep_context=False):
         self.recordset = recordset
         self.priority = priority
         self.eta = eta
@@ -63,6 +66,7 @@ class DelayableRecordset(object):
         self.description = description
         self.channel = channel
         self.identity_key = identity_key
+        self.keep_context = keep_context
 
     def __getattr__(self, name):
         if name in self.recordset:
@@ -87,7 +91,9 @@ class DelayableRecordset(object):
                                eta=self.eta,
                                description=self.description,
                                channel=self.channel,
-                               identity_key=self.identity_key)
+                               identity_key=self.identity_key,
+                               keep_context=self.keep_context
+                               )
         return delay
 
     def __str__(self):
@@ -297,6 +303,7 @@ class Job(object):
         if stored.company_id:
             job_.company_id = stored.company_id.id
         job_.identity_key = stored.identity_key
+        job_.keep_context = stored.context or {}
         return job_
 
     def job_record_with_same_identity_key(self):
@@ -311,7 +318,7 @@ class Job(object):
     @classmethod
     def enqueue(cls, func, args=None, kwargs=None,
                 priority=None, eta=None, max_retries=None, description=None,
-                channel=None, identity_key=None):
+                channel=None, identity_key=None, keep_context=None):
         """Create a Job and enqueue it in the queue. Return the job uuid.
 
         This expects the arguments specific to the job to be already extracted
@@ -324,7 +331,8 @@ class Job(object):
         new_job = cls(func=func, args=args,
                       kwargs=kwargs, priority=priority, eta=eta,
                       max_retries=max_retries, description=description,
-                      channel=channel, identity_key=identity_key)
+                      channel=channel, identity_key=identity_key,
+                      keep_context=keep_context)
         if new_job.identity_key:
             existing = new_job.job_record_with_same_identity_key()
             if existing:
@@ -355,7 +363,8 @@ class Job(object):
     def __init__(self, func,
                  args=None, kwargs=None, priority=None,
                  eta=None, job_uuid=None, max_retries=None,
-                 description=None, channel=None, identity_key=None):
+                 description=None, channel=None,
+                 identity_key=None, keep_context=False):
         """ Create a Job
 
         :param func: function to execute
@@ -381,6 +390,8 @@ class Job(object):
                              as argument)
         :param env: Odoo Environment
         :type env: :class:`odoo.api.Environment`
+        :param keep_context: Determine if the current context should be restored
+        :type keep_context: :bool or list
         """
         if args is None:
             args = ()
@@ -397,6 +408,7 @@ class Job(object):
 
         recordset = func.__self__
         env = recordset.env
+        self.keep_context = keep_context
         self.model_name = recordset._name
         self.method_name = func.__name__
         self.recordset = recordset
@@ -500,6 +512,10 @@ class Job(object):
                 }
 
         dt_to_string = odoo.fields.Datetime.to_string
+        context = {}
+        if self.keep_context:
+            context = self.env.context.copy()
+            vals.update({"context": json.dumps(context)})
         if self.date_enqueued:
             vals['date_enqueued'] = dt_to_string(self.date_enqueued)
         if self.date_started:
@@ -516,6 +532,9 @@ class Job(object):
             db_record.write(vals)
         else:
             date_created = dt_to_string(self.date_created)
+            # We store the original context used at import on create
+            ctx = self.env.context.copy() or '{}'
+            vals.update({'original_context': json.dumps(ctx) or ''})
             # The following values must never be modified after the
             # creation of the job
             vals.update({'uuid': self.uuid,
@@ -532,14 +551,40 @@ class Job(object):
             if self.channel:
                 vals.update({'channel': self.channel})
 
-            self.env[self.job_model_name].sudo().create(vals)
+            job = self.env[self.job_model_name].sudo().create(vals)
 
     def db_record(self):
         return self.db_record_from_uuid(self.env, self.uuid)
 
+    def _get_abs_context(self, original_ctx, ctx):
+        try:
+            import_ctx = json.loads(original_ctx)
+            current_ctx = json.loads(ctx)
+        except Exception as e:
+            _logger.error("\n\nERROR CONTEXT JSON CONVERSION: %s\n\n" % e)
+            return self.env.context.copy()
+        else:
+            if isinstance(import_ctx, dict) and isinstance(current_ctx, dict):
+                import_ctx.update(current_ctx)
+                return import_ctx
+        return self.env.context.copy()
+
+    def _get_record_context(self):
+        """
+        Get the context to execute the job
+        """
+        ctx = self._get_abs_context(self.db_record().original_context,
+                                    self.db_record().context)
+        if self.company_id:
+            ctx.update({'allowed_company_ids': [self.company_id]})
+        if self.uuid:
+            ctx.update({"job_uuid": self.uuid})
+        return ctx
+
     @property
     def func(self):
-        recordset = self.recordset.with_context(job_uuid=self.uuid)
+        context = self._get_record_context()
+        recordset = self.recordset.with_context(**context)
         recordset = recordset.sudo(self.user_id)
         return getattr(recordset, self.method_name)
 
