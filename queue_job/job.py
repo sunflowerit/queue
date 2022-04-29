@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timedelta
 
 import odoo
-from odoo.tools.safe_eval import safe_eval
+from odoo.addons.queue_job.fields import JobEncoder, JobDecoder
 
 from .exception import (NoSuchJobError,
                         FailedJobError,
@@ -515,7 +515,7 @@ class Job(object):
         context = {}
         if self.keep_context:
             context = self.env.context.copy()
-            vals.update({"context": json.dumps(context)})
+            vals.update({"context": json.dumps(context, cls=JobEncoder)})
         if self.date_enqueued:
             vals['date_enqueued'] = dt_to_string(self.date_enqueued)
         if self.date_started:
@@ -534,7 +534,8 @@ class Job(object):
             date_created = dt_to_string(self.date_created)
             # We store the original context used at import on create
             ctx = self.env.context.copy() or '{}'
-            vals.update({'original_context': json.dumps(ctx) or ''})
+            vals.update({'original_context': json.dumps(
+                ctx, cls=JobEncoder) or ''})
             # The following values must never be modified after the
             # creation of the job
             vals.update({'uuid': self.uuid,
@@ -551,15 +552,15 @@ class Job(object):
             if self.channel:
                 vals.update({'channel': self.channel})
 
-            job = self.env[self.job_model_name].sudo().create(vals)
+            self.env[self.job_model_name].sudo().create(vals)
 
     def db_record(self):
         return self.db_record_from_uuid(self.env, self.uuid)
 
     def _get_abs_context(self, original_ctx, ctx):
         try:
-            import_ctx = json.loads(original_ctx)
-            current_ctx = json.loads(ctx)
+            import_ctx = json.loads(original_ctx, cls=JobDecoder, env=self.env)
+            current_ctx = json.loads(ctx, cls=JobDecoder, env=self.env)
         except Exception as e:
             _logger.error("\n\nERROR CONTEXT JSON CONVERSION: %s\n\n" % e)
             return self.env.context.copy()
