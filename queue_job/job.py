@@ -535,7 +535,7 @@ class Job(object):
             # We store the original context used at import on create
             ctx = self.env.context.copy() or '{}'
             vals.update({'original_context': json.dumps(
-                ctx, cls=JobEncoder) or ''})
+                ctx, cls=JobEncoder, skipkeys=True) or ''})
             # The following values must never be modified after the
             # creation of the job
             vals.update({'uuid': self.uuid,
