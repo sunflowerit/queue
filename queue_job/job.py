@@ -515,7 +515,7 @@ class Job(object):
         context = {}
         if self.keep_context:
             context = self.env.context.copy()
-            vals.update({"context": json.dumps(context, cls=JobEncoder, skip_keys=True)})
+            vals.update({"context": json.dumps(context, cls=JobEncoder, skipkeys=True)})
         if self.date_enqueued:
             vals['date_enqueued'] = dt_to_string(self.date_enqueued)
         if self.date_started:
