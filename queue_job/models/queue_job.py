@@ -44,6 +44,18 @@ class QueueJob(models.Model):
     company_id = fields.Many2one(comodel_name='res.company',
                                  string='Company', index=True)
     name = fields.Char(string='Description', readonly=True)
+    context = fields.Char(
+        string="Context Value",
+        default="{}",
+        help="Context dictionary as Python expression, empty by default "
+             "(Default: {})",
+        readonly=True,
+    )
+    original_context = fields.Char(
+        string="Original Context Value",
+        default="{}",
+        help="This is the context dictionary that was used on import"
+    )
 
     model_name = fields.Char(string='Model', readonly=True)
     method_name = fields.Char(readonly=True)

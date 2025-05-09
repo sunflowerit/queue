@@ -34,7 +34,7 @@ class Base(models.AbstractModel):
     @api.multi
     def with_delay(self, priority=None, eta=None,
                    max_retries=None, description=None,
-                   channel=None, identity_key=None):
+                   channel=None, identity_key=None, keep_context=False):
         """ Return a ``DelayableRecordset``
 
         The returned instance allow to enqueue any method of the recordset's
@@ -62,6 +62,9 @@ class Base(models.AbstractModel):
         :param identity_key: key uniquely identifying the job, if specified
                              and a job with the same key has not yet been run,
                              the new job will not be added.
+        :param keep_context: boolean to set if the current context
+                             should be restored on the recordset
+                             (default: False).
         :return: instance of a DelayableRecordset
         :rtype: :class:`odoo.addons.queue_job.job.DelayableRecordset`
 
@@ -90,4 +93,6 @@ class Base(models.AbstractModel):
                                   max_retries=max_retries,
                                   description=description,
                                   channel=channel,
-                                  identity_key=identity_key)
+                                  identity_key=identity_key,
+                                  keep_context=keep_context
+                                  )

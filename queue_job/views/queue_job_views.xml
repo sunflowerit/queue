@@ -53,6 +53,10 @@
                             <field name="date_done"/>
                         </group>
                     </group>
+                    <group name="context_grp">
+                        <field name="context"/>
+                        <field name="original_context"/>
+                    </group>
                     <group colspan="4">
                         <div>
                             <label for="retry" string="Current try / max. retries" />

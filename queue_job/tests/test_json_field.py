@@ -23,6 +23,7 @@ class TestJson(common.TransactionCase):
             "_type": "odoo_recordset",
             "model": "res.partner",
             "ids": [partner.id],
+            "context": {},
         }]
         self.assertEqual(json.loads(value_json), expected)
 
